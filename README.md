@@ -3,6 +3,8 @@ DTSC 650: Data Analysis in R
 Niko Seino
 2023-05-05
 
+<a href="https://rpubs.com/nseino/1038302">View on RPubs</a>
+
 - <a href="#about-this-project" id="toc-about-this-project">About This
   Project</a>
 - <a href="#data-preparation" id="toc-data-preparation">Data
