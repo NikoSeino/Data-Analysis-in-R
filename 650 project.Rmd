@@ -1,0 +1,368 @@
+---
+title: 'DTSC 650: Data Analysis in R'
+author: "Niko Seino"
+date: "2023-05-05"
+output: 
+  html_document:
+    toc: true
+    theme: "cosmo"
+---
+
+## About This Project
+
+This project contains an analysis of survey data containing 37 variables 
+related to the health and demographics of survey participants.
+
+My goal was to explore and visualize the data, then determine the best 
+demographic variables for predicting depression. 
+
+To do this, I focused on four specific variables: 
+
+*ADDEPEV2*:
+Shows whether or not participants have been diagnosed with a depressive disorder.
+In the dataset, this variable is numeric but will need to be treated as nominal.
+The possible responses are: 1=Yes, 2=No, 7=Don't know/Not sure, 9=Refused
+
+*POORHLTH*:
+Shows how many days in the past 30 that poor physical or mental health kept 
+participant from doing usual day-to-day activities. 
+
+The values in this variable are integer values referring to days between 1-30, 
+and '88' is used to indicate "None", or 0 days. Other values include 77, 
+meaning "Don't know",and 99, meaning "refused". 
+
+*EDUCA*
+Shows participants' level of education.This is a numeric variable with the 
+numbers representing categories of education level. There are 6 categories 
+1-6 starting with 1 representing no formal education or only kindergarten, 
+up to 6 representing 4 or more years of college. An additional category, 9, 
+represents participants who did not give an answer.
+
+*CHILDREN*
+Shows the number of children in each participant's household.
+This is a numeric variable representing the number of children. 
+The value has a range of 1-87, and 88 represents "none" or 0, which 
+was important to note when doing statistical calculations. 
+'99' represents those who did not give an answer.
+
+
+## Data Preparation
+```{r}
+# Clear memory
+rm(list = ls())
+
+# Load packages
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(lm.beta))
+
+# Set working directory and load dataset
+#setwd("~/DTSC650")
+brfss <- read_csv("BRFSS2015_650.csv", show_col_types = FALSE)
+```
+
+
+## Data Cleaning
+
+1. Transforming variables
+
+```{r warning=FALSE}
+#Viewing the "Poor Health" data:
+options(scipen = 999)
+ggplot(brfss, aes(x = brfss$POORHLTH, na.rm = TRUE)) +
+  geom_histogram(binwidth = 3)
+
+# The graph shows that the data is varied between 1-30 with no real outliers.
+#   I can also see that the majority of responses were 88, or 0 days. 
+#   To better represent this and clean up the graph, I will update the data
+#   to show the zeros and also eliminate the 77s and 99s.
+
+brfss$POORHLTH <- replace(brfss$POORHLTH, brfss$POORHLTH == 88, 0)
+brfss <- brfss %>%
+  filter(POORHLTH <= 30, na.rm = TRUE)
+
+# Updated graph:
+ggplot(brfss, aes(x = POORHLTH)) +
+  geom_histogram(binwidth = 2)
+# Now I can clearly see the most responses are at 0, and there are no tails on
+#   either end of the graph indicating no outliers. 
+```
+
+```{r}
+# ADDEPEV2: Transforming into a binary variable with options "Yes" or "no"
+# Eliminating the non responses ('7's and '9's)
+# Converting variables to factors with levels
+
+brfss <- brfss %>%
+  filter(ADDEPEV2 == 1 | ADDEPEV2 == 2)
+brfss$ADDEPEV2 <- factor(brfss$ADDEPEV2, levels = c(1, 2), labels = c("Yes", "No"))
+```
+
+```{r}
+# Converting variables to factors and removing non responses
+brfss <- brfss %>%
+  filter(EDUCA > 0, EDUCA < 7)
+
+# Adding labels to decrease confusion
+brfss$EDUCA <- factor(brfss$EDUCA,
+                         levels = c("1", "2", "3", "4", "5", "6"),
+                         labels = c("None", "Elementary", "Some High School",
+                                    "High School Graduate", "Some College",
+                                    "College Graduate"))
+```
+
+
+2. Removing Outliers
+
+```{r message=FALSE, warning=FALSE}
+# Creating a graph to view the "Children" data:
+ggplot(brfss, aes(x = brfss$CHILDREN, na.rm = TRUE)) +
+  geom_histogram(binwidth = 3)
+# The 88 and 99 values are making the data difficult to read, so I need to
+#   transform the 88 to 0 and remove the 99's since they are not relevant.
+# I also want to know what the max is so I can better fit the graph.
+brfss$CHILDREN <- replace(brfss$CHILDREN, brfss$CHILDREN == 88, 0)
+brfss <- brfss %>%
+  filter(CHILDREN <= 87)
+max(brfss$CHILDREN) 
+#max number of children in a household is 77. This seems odd and a possible outlier.
+
+# Creating a boxplot to view quantiles
+ggplot(brfss, aes(x = CHILDREN)) +
+  geom_boxplot()
+# Here we can see several possible outliers.
+
+childrenupper <- quantile(brfss$CHILDREN, .9985, na.rm = TRUE)
+# This shows that 99.85% of the values are at 6 or below. 
+# Values above 6 are more than 3 standard deviations from the mean, indicating 
+#   they are outliers. 
+
+# Update the dataset with outliers removed 
+children_out <- which(brfss$CHILDREN > 6)
+length(children_out) 
+brfss <- brfss[-children_out, ]
+
+```
+
+
+## Data Visualization 
+
+```{r}
+# Visualizing poor health days
+
+Q12a <- ggplot(brfss, aes(x = POORHLTH)) +
+  geom_bar() + 
+  labs(title = "Days in the Past 30 in which Poor Health 
+       Prevented Usual Daily Activities")
+Q12a
+```
+
+```{r}
+# Poor health days by depression dx
+
+ggplot(brfss, aes(x = POORHLTH)) +
+  geom_bar() +
+  facet_wrap(~ ADDEPEV2) +
+  labs(title = "Days in the Past 30 in which Poor Health
+       Affected Daily Activities of People 
+       With and Without Depression")
+```
+
+Interpretation: 
+
+We can see that there are peaks at both ends, 0 and 30, meaning most people
+either were unaffected by poor health in the last 30 days, or were affected
+every day. This pattern is similar in those who have been told they have 
+depression, however in this population the proportion of 0 poor health days 
+is much lower, and the proportion of 30 poor health days is higher. 
+
+```{r}
+# Simple bar graph to view counts of participants with depression dx
+ggplot(brfss, aes(x = ADDEPEV2, fill = ADDEPEV2)) +
+  geom_bar() +
+  labs(title = "Number of People in Survey Who Have Had Depression",
+       x = "Had Depression")
+```
+
+```{r}
+# Depression in relation to education level
+Q12b <- ggplot(brfss, aes(x = ADDEPEV2, fill = EDUCA)) +
+  geom_bar(position = "dodge") + 
+  labs(title = 'Education Level of People Who Have Had Depression')
+Q12b
+```
+
+Interpretation: 
+
+Among Respondents who reported they have NOT been diagnosed with depression,
+there is a higher proportion of people who have completed 4 or more years of
+college. The proportions of other education levels are similar.
+
+```{r}
+# Graphing education levels and number of children
+Q12c <- ggplot(brfss) +
+  geom_bar(aes(x = EDUCA, fill = EDUCA)) +
+  labs(title = "Education Level of Survey Participants", x = "Education Level") +
+  theme(axis.text.x = element_text(angle = 90))
+Q12c
+
+Q12d <- ggplot(brfss) +
+  geom_bar(aes(x = CHILDREN)) +
+  labs(title = "Number of Children in Households of Survey Participants") +
+  scale_x_continuous(breaks = seq(0, 6, 1))
+Q12d
+```
+
+```{r}
+# Creating a table to show frequencies of education level per # of children
+edu_kids <- table(brfss$EDUCA, brfss$CHILDREN)
+edu_kids
+```
+
+```{r}
+# Plotting a comparison of education level vs number of children
+ggplot(brfss, aes(x = EDUCA, fill = EDUCA)) +
+  geom_bar() +
+  scale_fill_brewer("blues") +
+  facet_grid(~ CHILDREN) +
+  labs(title = "Education Level vs Number of Children", x = "Education Level") +
+  theme(axis.text.x = element_text(angle = 90))
+```
+
+Interpretation:  
+
+The majority of participants had 0 children in their households, and for all
+numbers of children (0-6), counts increased as education level increased, with
+"College Graduate" being the most common education level. The one exception 
+was participants who had 6 children--"Some College" was the most frequent
+education level and "High School Graduate" the second most frequent. 
+
+## Data Exploration
+
+Conducting descriptive statistical calculations to gain further insights and 
+answer some questions.
+
+1. What is the average number of days poor health affected daily activities 
+of people who completed only elementary school, vs those who graduated college?
+
+```{r}
+Q13a <- brfss %>%
+  filter(EDUCA == "Elementary" | EDUCA == "College Graduate") %>%
+  group_by(EDUCA) %>%
+  summarize(mean_poorhlth = round(mean(POORHLTH), 2))
+Q13a
+```
+
+
+2. What are the frequencies of each education level for participants who had
+depression?
+
+```{r}
+Q13b <- brfss %>%
+  filter(ADDEPEV2 == "Yes") %>%
+  group_by(EDUCA) %>%
+  summarize(count = n()) %>%
+  arrange(desc(count))
+Q13b
+```
+
+
+3. What is the most common education level for participants who reported poor health
+affected daily activities for more than 15 out of the past 30 days?
+
+```{r}
+Q13c <- brfss %>%
+  filter(POORHLTH > 15) %>%
+  group_by(EDUCA) %>%
+  summarize(count = n()) %>%
+  arrange(desc(count)) %>%
+  head(1)
+Q13c
+```
+
+
+4. What is the mean and standard deviation of number of children for those who
+did vs did not report having depression?
+
+```{r}
+Q13d <- brfss %>%
+  group_by(ADDEPEV2) %>%
+  summarize(mean_children = mean(CHILDREN), sd_children = sd(CHILDREN)) %>%
+  as.data.frame() %>%
+  mutate_if(is.numeric, round, 2)
+Q13d
+```
+
+
+## Using Data to Make Predictions
+
+1. Creating a dataframe with just the variables I want to focus on
+
+```{r}
+df_lr <- brfss %>%
+  select(POORHLTH, ADDEPEV2, EDUCA, CHILDREN)
+```
+
+2. Looking at summary stats
+
+```{r}
+summary(df_lr)
+```
+
+
+3. Performing logistic regressions to predict the likelihood of a participant 
+having depression:
+
+```{r}
+# First, predicting depression from poor health days:
+mod1 <- glm(ADDEPEV2 ~ POORHLTH, binomial(link = "logit"), df_lr)
+summary(mod1)
+# Converting coefficients from log odds to odds ratio
+exp(coef(mod1))
+```
+
+Interpretation: 
+
+POORHLTH odds ratio of .95 indicates that for each additional day of poor 
+health, the odds of not having had depression decreases by about 5%. 
+So there is a negative relationship between poor health days and not having 
+had depression. The POORHLTH variable is statistically significant
+in this model, however the AIC appears to be quite high. Will test other
+models to see if we can get a lower AIC.
+
+4. Adding another predictor variable
+
+```{r}
+mod2 <- glm(ADDEPEV2 ~ POORHLTH + EDUCA, binomial(), df_lr)
+summary(mod2)
+```
+
+
+The EDUCA variable does not appear to be a good fit for this model as none of
+the categories have statistically significant coefficients. 
+
+5. Predicting depression from poor health days and number of children
+
+```{r}
+mod3 <- glm(ADDEPEV2 ~ POORHLTH + CHILDREN, binomial(), df_lr)
+summary(mod3)
+exp(coef(mod3))
+```
+
+
+The CHILDREN coefficient is statistically significant and has a negative
+relationship with the outcome variable.
+
+5. Choosing the model with the best predictor variables
+
+```{r}
+# Calculating AIC
+AIC(mod3)
+AIC(mod1)
+```
+
+Result: 
+
+The AIC of our model with 2 predictors and the first model with just one predictor
+are very close, but the AIC of the model with both POORHLTH and CHILDREN
+is slightly lower, indicating it as the better model. 
