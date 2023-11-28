@@ -1,5 +1,5 @@
 ---
-title: 'DTSC 650: Data Analysis in R'
+title: 'Data Analysis in R'
 author: "Niko Seino"
 date: "2023-05-05"
 output: 
