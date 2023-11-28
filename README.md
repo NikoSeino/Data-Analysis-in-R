@@ -1,4 +1,4 @@
-DTSC 650: Data Analysis in R
+Data Analysis in R
 ================
 Niko Seino
 2023-05-05
